@@ -1,33 +1,43 @@
 
 #![no_main]
 #![no_std]
+#![feature(custom_test_frameworks)]
+#![test_runner(xg_os::test_runner)]
+#![reexport_test_harness_main = "test_main"]
+
 use core::panic::PanicInfo;
-mod vag_buf;
+use xg_os::println;
 
 //#![asm]
 
-#[panic_handler]
-fn panic(_info : &PanicInfo) -> !{
-	loop{}
-}
-
-
-
-static HELLO : &[u8] = b"Hello XG_os!!!!!!";
 
 #[no_mangle]
-pub extern "C" fn _start() -> !{
-		let vag_buffer = 0xb8000 as *mut u8;
-		for(i , &byte) in HELLO.iter().enumerate(){
-				unsafe{
-						*vag_buffer.offset(i as isize * 2) = byte;
-						*vag_buffer.offset(i as isize * 2 + 1) = 0x8;
-				}
-		}
-		vag_buf::print_something();
-		loop {} 
+pub extern "C" fn _start() -> ! {
+	println!("initing....");
+	xg_os::init();
+    //println!("Hello xg_os{}", 1/0);
+	x86_64::instructions::interrupts::int3();
+	println!("Hello xg_os{}", "!");
+    #[cfg(test)]
+    test_main();
+
+    loop {}
 }
 
-//fn main() {
-//    println!("Hello, world!");
-//}
+/// This function is called on panic.
+#[cfg(not(test))]
+#[panic_handler]
+fn panic(info: &PanicInfo) -> ! {
+    println!("{}", info);
+    loop {}
+}
+
+#[cfg(test)]
+#[panic_handler]
+fn panic(info: &PanicInfo) -> ! {
+    xg_os::test_panic_handler(info)
+}
+
+
+
+

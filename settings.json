@@ -2,6 +2,6 @@
 	"rust-analyzer.checkOnSave.allTargets": false,
 	"rust-analyzer.checkOnSave.extraArgs": [
 			"--target",
-			"riscv64gc-unknown-none-elf"
+			"x86_64-unknown-none"
 	]
 }

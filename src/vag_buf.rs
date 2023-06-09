@@ -1,4 +1,6 @@
 //vag_buf.rs
+use volatile::Volatile;
+use core::fmt;
 
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -54,7 +56,7 @@ const BUFFER_WIDTH: usize = 80;
 
 #[repr(transparent)]
 struct Buffer {
-    chars: [[ScreenChar; BUFFER_WIDTH]; BUFFER_HEIGHT],
+    chars: [[Volatile<ScreenChar>; BUFFER_WIDTH]; BUFFER_HEIGHT],
 
     /*
         在 Rust 中，你可以使用 [T; N] 语法来定义一个包含 N 个 T 类型元素的数组。
@@ -68,7 +70,7 @@ pub struct Writer {
     color_code: ColorCode,
     buffer: & 'static mut Buffer,//全局静态指针
 }
-/*
+/* xxx::www
     usize 是 Rust 中的一个基本类型，它表示一个指针大小的无符号整数。它的大小取决于目标平台：在 32 位系统上，
     它的大小为 32 位；在 64 位系统上，它的大小为 64 位。
     usize 类型通常用于表示大小和索引。例如，在数组和切片中，
@@ -87,16 +89,34 @@ impl Writer {
                 let col = self.column_position;
 
                 let color_code = self.color_code;
-                self.buffer.chars[row][col] = ScreenChar {// set ascii and color
+                self.buffer.chars[row][col].write(ScreenChar {// set ascii and color
                     ascii_character: byte,
                     color_code,
-                };
+                });
                 self.column_position += 1;
             }
         }
     }
 
-    fn new_line(&mut self) {/* TODO */}
+    fn new_line(&mut self) {
+        for row in 1..BUFFER_HEIGHT{ //[1, BUFF)
+            for col in 0..BUFFER_WIDTH{
+                let charater = self.buffer.chars[row][col].read();//copy
+                self.buffer.chars[row - 1][col].write(charater);//self move copy
+            }
+        }
+        self.clear_row(BUFFER_HEIGHT - 1);
+        self.column_position = 0;
+    }
+    fn clear_row(&mut self, row:usize){
+        let blank = ScreenChar{
+            ascii_character : b' ',
+            color_code: self.color_code,
+        };
+        for col in 0..BUFFER_WIDTH{
+            self.buffer.chars[row][col].write(blank);
+        }
+    }
 }
 
 impl Writer {
@@ -113,15 +133,63 @@ impl Writer {
     }
 }
 
+impl fmt::Write for Writer{//一个fmt宏, 针对Write的, 可用用{}来格式化打印东西
+    fn write_str(&mut self, s: &str) -> fmt::Result {
+        self.write_string(s);
+        Ok(())
+    }
+}
+
+
 
 pub fn print_something() {
+    use core::fmt::Write;
     let mut writer = Writer {
         column_position: 0,
-        color_code: ColorCode::new(Color::Yellow, Color::LightGray),
+        color_code: ColorCode::new(Color::White, Color::LightGray),
         buffer: unsafe { &mut *(0xb8000 as *mut Buffer) },
     };
 
     writer.write_byte(b'H');
     writer.write_string("ello ");
     writer.write_string("Wörld!");
+    write!(writer, "fmt write test {} and {}", "teststr", 0/1).unwrap();
+    //UTF-8 编码的基本特点之一：如果一个字符占用多个字节，那么每个组成它的独立字节都不是有效的 ASCII 码字节
 }
+
+
+use lazy_static::lazy_static;
+use spin::Mutex;//自旋互斥锁
+lazy_static! {
+    pub static ref WRITER: Mutex<Writer> = Mutex::new(Writer {
+        column_position: 0,
+        color_code: ColorCode::new(Color::White, Color::Black),
+        buffer: unsafe { &mut *(0xb8000 as *mut Buffer) },
+    });
+}
+
+
+#[macro_export]
+macro_rules! print {
+    ($($arg:tt)*) => ($crate::vag_buf::_print(format_args!($($arg)*)));
+}
+
+#[macro_export]
+/*
+$ 符号用于宏定义中，表示模式匹配和重复。
+例如，在 print! 宏的定义中，$($arg:tt)* 表示匹配任意数量的 tt 类型的参数，
+并将它们捕获到名为 arg 的变量中。在宏的右侧，$($arg)* 表示将捕获到的所有参数重复展开。
+
+ */
+macro_rules! println {
+    () => ($crate::print!("\n"));
+    ($($arg:tt)*) => ($crate::print!("{}\n", format_args!($($arg)*)));
+}
+
+#[doc(hidden)]
+pub fn _print(args: fmt::Arguments) {
+    use core::fmt::Write;
+    WRITER.lock().write_fmt(args).unwrap();
+}
+
+

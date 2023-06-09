@@ -1,3 +1,7 @@
 {
-    "cmake.configureOnOpen": true
+	"rust-analyzer.checkOnSave.allTargets": false,
+	"rust-analyzer.checkOnSave.extraArgs": [
+			"--target",
+			"riscv64gc-unknown-none-elf"
+	]
 }
